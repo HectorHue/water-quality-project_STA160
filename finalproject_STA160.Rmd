@@ -1,0 +1,406 @@
+---
+title: "Final Project STA160"
+author: "Hector Carvajal"
+date: "2025-05-27"
+output:
+  html_document:
+    df_print: paged
+---
+
+Section 2.1 & 2.2 — Data Loading & Cleaning
+
+```{r}
+#load required package
+library(tidyverse)
+
+#read in the data
+df <- read_csv("~/Documents/School/STA160/Final Project Materials/train.csv")
+head(df)
+#check for dimensions
+dim(df)
+
+```
+
+```{r}
+#[clean data] count the missing values for each column
+colSums(is.na(df)) %>% sort(decreasing = TRUE)
+#[clean data] remove rows with missing values
+df_clean <- df %>% drop_na()
+colSums(is.na(df_clean)) %>% sort(decreasing = TRUE)
+
+```
+
+Section 2.3 — Exploratory Data Analysis (EDA)
+
+```{r}
+#stats (min, median, mean, max) for numeric variables
+summary(select(df_clean, starts_with("feature"), starts_with("composition")))
+
+```
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+# Boxplot of FeatureA
+boxplot_A <- ggplot(df_clean, aes(y = featureA)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue") +
+  labs(
+    title = "Boxplot of FeatureA",
+    y = "Population Density (FeatureA)",
+    x = NULL
+  ) +
+  theme_minimal()
+
+# Histogram of FeatureA
+hist_A <- ggplot(df_clean, aes(x = featureA)) +
+  geom_histogram(bins = 50, fill = "gray30") +
+  labs(
+    title = "Histogram of FeatureA",
+    x = "FeatureA",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Show both FeatureA plots
+grid.arrange(boxplot_A, hist_A, ncol = 2)
+
+```
+
+
+```{r}
+# Boxplot of FeatureH
+boxplot_H <- ggplot(df_clean, aes(y = featureH)) +
+  geom_boxplot(fill = "lightgreen", color = "darkgreen") +
+  labs(
+    title = "Boxplot of FeatureH",
+    y = "Pollutant Level (FeatureH)",
+    x = NULL
+  ) +
+  theme_minimal()
+
+# Histogram of original FeatureH
+hist_H <- ggplot(df_clean, aes(x = featureH)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "white") +
+  labs(
+    title = "Histogram of FeatureH",
+    x = "FeatureH (Original)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Log transform if not done yet
+df_clean$featureH_log <- log1p(df_clean$featureH)
+
+# Histogram of log-transformed FeatureH
+hist_H_log <- ggplot(df_clean, aes(x = featureH_log)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "white") +
+  labs(
+    title = "Log-Transformed FeatureH",
+    x = "Log(1 + FeatureH)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Show FeatureH plots
+library(gridExtra)
+library(grid)
+
+blank <- nullGrob()
+
+grid.arrange(
+  arrangeGrob(
+    boxplot_H, hist_H,
+    ncol = 2
+  ),
+  arrangeGrob(
+    blank, hist_H_log, blank,
+    ncol = 3,
+    widths = c(1, 1.5, 1)
+  ),
+  nrow = 2
+)
+
+```
+
+```{r}
+summary(df)
+
+```
+
+
+
+Section 2.3 (continued) — Correlation Matrix
+
+
+```{r}
+library(corrplot)
+# Select only numeric columns from your data frame
+numericVars <- df[sapply(df, is.numeric)]
+# Calculate correlation matrix using complete cases only (ignoring NA rows)
+corMatrix <- cor(numericVars, use = "complete.obs")
+corrplot(corMatrix, method = "color", type = "upper", tl.cex = 0.8)
+
+```
+
+
+Section 3.2 — Modeling (Linear Regression)
+
+```{r}
+library(caret)
+
+# Add transformed feature
+df_clean$featureH_log <- log1p(df_clean$featureH)
+
+# Remove unnecessary variables (drop original featureH, but keep featureH_log!)
+df_model <- df_clean %>%
+  select(-id, -unit, -featureH)  # DO NOT drop featureH_log
+
+# Set seed for reproducibility
+set.seed(160)
+
+# Train/test split
+sample_size <- floor(0.8 * nrow(df_model))
+train_indices <- sample(seq_len(nrow(df_model)), size = sample_size)
+train_data <- df_model[train_indices, ]
+test_data <- df_model[-train_indices, ]
+
+```
+
+
+
+
+```{r}
+# Ensure test categorical levels match those from train data
+test_data$categoryA <- factor(test_data$categoryA, levels = levels(train_data$categoryA))
+test_data$categoryB <- factor(test_data$categoryB, levels = levels(train_data$categoryB))
+test_data$categoryC <- factor(test_data$categoryC, levels = levels(train_data$categoryC))
+test_data$categoryD <- factor(test_data$categoryD, levels = levels(train_data$categoryD))
+test_data$categoryE <- factor(test_data$categoryE, levels = levels(train_data$categoryE))
+test_data$categoryF <- factor(test_data$categoryF, levels = levels(train_data$categoryF))
+
+```
+
+
+
+```{r}
+# Fit linear regression model
+model_lm <- lm(result ~ ., data = train_data)
+
+# View summary
+summary(model_lm)
+
+# Predict on test set
+pred_lm <- predict(model_lm, newdata = test_data)
+
+```
+
+
+
+```{r}
+# Optional: Evaluate model performance
+library(Metrics)
+rmse_lm <- rmse(test_data$result, pred_lm)
+mae_lm <- mae(test_data$result, pred_lm)
+rmse_lm
+mae_lm
+
+```
+
+
+
+**Random Forests**
+```{r}
+set.seed(160)
+sample_size <- floor(0.8 * nrow(df_model))
+train_indices <- sample(seq_len(nrow(df_model)), size = sample_size)
+train_data <- df_model[train_indices, ]
+test_data <- df_model[-train_indices, ]
+
+```
+
+```{r}
+train_data <- train_data %>% mutate(across(where(is.character), as.factor))
+test_data  <- test_data %>% mutate(across(where(is.character), as.factor))
+
+```
+
+
+```{r}
+cat_cols <- c("categoryA", "categoryB", "categoryC", "categoryD", "categoryE", "categoryF")
+
+for (col in cat_cols) {
+  common_levels <- intersect(levels(train_data[[col]]), levels(test_data[[col]]))
+  
+  train_data[[col]] <- factor(train_data[[col]], levels = common_levels)
+  test_data[[col]]  <- factor(test_data[[col]], levels = common_levels)
+  
+  # Drop rows with NA (from unseen levels)
+  train_data <- train_data[!is.na(train_data[[col]]), ]
+  test_data  <- test_data[!is.na(test_data[[col]]), ]
+}
+
+```
+
+```{r}
+library(ranger)
+
+model_rf <- ranger(
+  result ~ .,
+  data = train_data,
+  num.trees = 500,
+  importance = "impurity"
+)
+
+```
+
+
+
+```{r}
+pred_rf <- predict(model_rf, data = test_data)$predictions
+
+rmse_rf <- sqrt(mean((test_data$result - pred_rf)^2))
+cat("RMSE - Random Forest:", rmse_rf)
+
+```
+
+
+
+```{r}
+importance_df <- data.frame(
+  Feature = names(model_rf$variable.importance),
+  Importance = model_rf$variable.importance
+) %>%
+  arrange(desc(Importance))
+
+ggplot(importance_df[1:10, ], aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Important Features (Random Forest)", x = "Feature", y = "Importance")
+
+```
+
+
+**Plots**
+
+```{r}
+library(ggplot2)
+
+# Create a data frame of actual vs predicted values
+df_eval <- data.frame(
+  actual = test_data$result,
+  predicted = predict(model_lm, newdata = test_data)
+)
+
+# Residuals
+df_eval$residuals <- df_eval$actual - df_eval$predicted
+
+# Plot 1: Predicted vs Actual
+plot1 <- ggplot(df_eval, aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.4, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs. Actual (Linear Regression)",
+       x = "Actual Water Quality",
+       y = "Predicted Water Quality") +
+  theme_minimal()
+
+# Plot 2: Residuals vs Predicted
+plot2 <- ggplot(df_eval, aes(x = predicted, y = residuals)) +
+  geom_point(alpha = 0.4, color = "darkorange") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs. Predicted (Linear Regression)",
+       x = "Predicted Water Quality",
+       y = "Residuals") +
+  theme_minimal()
+
+# Show both plots together
+library(gridExtra)
+grid.arrange(plot1, plot2, nrow = 2)
+
+```
+
+```{r}
+library(Metrics)   # for RMSLE, RMSE, MAE
+library(caret)     # for R²
+
+```
+
+```{r}
+pred_lm <- predict(model_lm, newdata = test_data)
+
+```
+
+```{r}
+length(pred_lm)
+
+```
+
+
+
+```{r}
+library(Metrics)
+library(caret)
+
+# inear Regression
+rmsle_lm <- rmsle(test_data$result, pred_lm)
+rmse_lm  <- rmse(test_data$result, pred_lm)
+mae_lm   <- mae(test_data$result, pred_lm)
+r2_lm    <- R2(pred_lm, test_data$result)
+
+#rrandom Forest
+rmsle_rf <- rmsle(test_data$result, pred_rf)
+rmse_rf  <- rmse(test_data$result, pred_rf)
+mae_rf   <- mae(test_data$result, pred_rf)
+r2_rf    <- R2(pred_rf, test_data$result)
+
+```
+
+
+
+
+```{r}
+model_results <- data.frame(
+  Model = c("Linear Regression", "Random Forest"),
+  RMSLE = c(rmsle_lm, rmsle_rf),
+  RMSE  = c(rmse_lm, rmse_rf),
+  MAE   = c(mae_lm, mae_rf),
+  R2    = c(r2_lm, r2_rf)
+)
+
+print(model_results)
+
+```
+
+
+
+
+
+```{r}
+importance_df <- data.frame(
+  Feature = names(model_rf$variable.importance),
+  Importance = model_rf$variable.importance
+) %>%
+  arrange(desc(Importance))
+
+ggplot(importance_df[1:10, ], aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Top 10 Important Features (Random Forest)",
+    x = "Feature",
+    y = "Importance"
+  )
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
